@@ -152,7 +152,7 @@ document.querySelector<HTMLDivElement>(
     <span class="help">
       WASD = bewegen
       · Maus = umsehen
-      · Shift = schneller
+      · Shift = ↓
     </span>
 
   </div>
@@ -254,10 +254,11 @@ camera.keysRight = [68];
 
 
 // ============================================================
-// SHIFT = SCHNELLER FLIEGEN
+// SHIFT = NACH UNTEN FLIEGEN
 // ============================================================
 
-let shiftPressed = false;
+let moveUp = false;
+let moveDown = false;
 
 
 window.addEventListener(
@@ -265,12 +266,17 @@ window.addEventListener(
   event => {
 
     if (
+      event.code === "Space"
+    ) {
+
+      moveUp = true;
+    }
+
+    if (
       event.key === "Shift"
     ) {
 
-      shiftPressed = true;
-
-      camera.speed = 250;
+      moveDown = true;
     }
 
   }
@@ -282,17 +288,21 @@ window.addEventListener(
   event => {
 
     if (
+      event.code === "Space"
+    ) {
+
+      moveUp = false;
+    }
+
+    if (
       event.key === "Shift"
     ) {
 
-      shiftPressed = false;
-
-      camera.speed = 60;
+      moveDown = false;
     }
 
   }
 );
-
 
 // ============================================================
 // LICHT
@@ -865,11 +875,26 @@ createTrackNetwork()
 engine.runRenderLoop(
   () => {
 
+    if (
+      moveUp
+    ) {
+
+      camera.position.y += 3;
+    }
+
+
+    if (
+      moveDown
+    ) {
+
+      camera.position.y -= 3;
+    }
+
+
     scene.render();
 
   }
 );
-
 
 // ============================================================
 // RESIZE
