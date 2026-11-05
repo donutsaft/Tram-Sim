@@ -1,0 +1,21 @@
+{
+  "projection": {
+    "source": "EPSG:4326",
+    "target": "EPSG:25832"
+  },
+  "origin": {
+    "utm_x": 538640.601,
+    "utm_y": 5681614.745
+  },
+  "world_size": {
+    "width_m": 23623.151,
+    "height_m": 19551.88
+  },
+  "statistics": {
+    "tracks": 653,
+    "tram": 529,
+    "light_rail": 45,
+    "rail_600v": 79,
+    "tram_stops": 271
+  }
+}
