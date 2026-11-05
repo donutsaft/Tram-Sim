@@ -6,8 +6,6 @@ body,
   margin: 0;
   overflow: hidden;
 
-  background: #080a0f;
-
   font-family:
     system-ui,
     -apple-system,
@@ -16,16 +14,12 @@ body,
     sans-serif;
 }
 
-
 #renderCanvas {
   width: 100%;
   height: 100%;
-
   display: block;
-
   outline: none;
 }
-
 
 #info {
   position: fixed;
@@ -36,19 +30,19 @@ body,
   display: flex;
   flex-direction: column;
 
-  gap: 4px;
+  gap: 5px;
 
   padding: 12px 14px;
+
+  color: white;
 
   background:
     rgba(
       15,
       18,
       25,
-      0.85
+      0.82
     );
-
-  color: white;
 
   border-radius: 10px;
 
@@ -56,11 +50,16 @@ body,
     blur(8px);
 
   pointer-events: none;
-}
 
+  z-index: 10;
+}
 
 #status {
   font-size: 12px;
+  opacity: 0.8;
+}
 
-  opacity: 0.7;
+.help {
+  font-size: 11px;
+  opacity: 0.55;
 }

@@ -2,124 +2,345 @@ import "./style.css";
 
 import { Engine } from "@babylonjs/core/Engines/engine";
 import { Scene } from "@babylonjs/core/scene";
-import { Vector3, Color3, Color4 } from "@babylonjs/core/Maths/math";
-import { ArcRotateCamera } from "@babylonjs/core/Cameras/arcRotateCamera";
+import {
+  Vector3,
+  Color3,
+  Color4
+} from "@babylonjs/core/Maths/math";
+import { FreeCamera } from "@babylonjs/core/Cameras/freeCamera";
 import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 
-type TrackType = "tram" | "light_rail" | "rail_600v";
 
-interface TrackPoint {
+// ============================================================
+// TYPEN
+// ============================================================
+
+type TrackType =
+  | "tram"
+  | "light_rail"
+  | "rail_600v";
+
+type StructureType =
+  | "ground"
+  | "bridge"
+  | "tunnel"
+  | "covered"
+  | "embankment"
+  | "cutting"
+  | string;
+
+
+interface GraphPoint {
   x: number;
+  y: number;
   z: number;
 }
 
-interface Track {
+
+interface GraphEdge {
   id: string;
+
+  from: string;
+  to: string;
+
   type: TrackType;
-  points: TrackPoint[];
+
+  structure: StructureType;
+
+  length_m: number;
+
+  points: GraphPoint[];
+
+  source_way_ids: string[];
+
   properties: {
     name: string | null;
     operator: string | null;
+
     gauge: string | null;
     voltage: string | null;
+
     electrified: string | null;
-    usage: string | null;
-    service: string | null;
+
+    bridge: string | null;
+    tunnel: string | null;
+    covered: string | null;
+
+    layer: string | null;
+
+    embankment: string | null;
+    cutting: string | null;
   };
 }
 
-interface TracksData {
-  tracks: Track[];
+
+interface GraphData {
+
+  coordinate_system: {
+    x: string;
+    y: string;
+    z: string;
+    unit: string;
+  };
+
+  origin: {
+    epsg: number;
+    utm_x: number;
+    utm_z: number;
+  };
+
+  nodes: unknown[];
+
+  edges: GraphEdge[];
 }
 
 
-// --------------------------------------------------
-// HTML
-// --------------------------------------------------
+// ============================================================
+// KONFIGURATION
+// ============================================================
 
-document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
+// Wir verschieben die realen Höhen nur für Babylon.
+//
+// Beispiel:
+//
+// reale Höhe 180 m
+// -> Babylon Y = 0
+//
+// reale Höhe 220 m
+// -> Babylon Y = 40
+//
+const WORLD_BASE_HEIGHT = 180;
+
+
+// Vertikale Überhöhung.
+//
+// 1.0 = echte Höhen
+//
+// Wenn Kassels Relief aus großer Entfernung zu flach wirkt,
+// kannst du testweise z.B. 1.5 verwenden.
+//
+// Für die eigentliche Simulation später wieder 1.0.
+const HEIGHT_SCALE = 1.0;
+
+
+// Spurweite als Fallback in Metern.
+const DEFAULT_GAUGE = 1.435;
+
+
+// ============================================================
+// HTML
+// ============================================================
+
+document.querySelector<HTMLDivElement>(
+  "#app"
+)!.innerHTML = `
+
   <canvas id="renderCanvas"></canvas>
 
   <div id="info">
-    <strong>Kassel Tram Simulator</strong>
-    <span id="status">Lade Gleisdaten...</span>
+
+    <strong>
+      Kassel Tram Simulator
+    </strong>
+
+    <span id="status">
+      Lade 3D-Gleisnetz...
+    </span>
+
+    <span class="help">
+      WASD = bewegen
+      · Maus = umsehen
+      · Shift = schneller
+    </span>
+
   </div>
+
 `;
 
+
+// ============================================================
+// CANVAS
+// ============================================================
+
 const canvas =
-  document.querySelector<HTMLCanvasElement>("#renderCanvas")!;
+  document.querySelector<HTMLCanvasElement>(
+    "#renderCanvas"
+  )!;
 
 
-// --------------------------------------------------
-// Engine + Scene
-// --------------------------------------------------
+// ============================================================
+// ENGINE + SCENE
+// ============================================================
 
-const engine = new Engine(canvas, true);
+const engine =
+  new Engine(
+    canvas,
+    true
+  );
 
-const scene = new Scene(engine);
 
-scene.clearColor = new Color4(
-  0.03,
-  0.04,
-  0.06,
-  1
+const scene =
+  new Scene(
+    engine
+  );
+
+
+scene.clearColor =
+  new Color4(
+    0.55,
+    0.72,
+    0.9,
+    1
+  );
+
+
+// ============================================================
+// KAMERA
+// ============================================================
+
+const camera =
+  new FreeCamera(
+    "camera",
+
+    new Vector3(
+      -4000,
+      350,
+      3000
+    ),
+
+    scene
+  );
+
+
+// Erstmal Richtung Boden / Innenstadt schauen.
+camera.setTarget(
+  new Vector3(
+    -4000,
+    0,
+    3000
+  )
 );
 
 
-// --------------------------------------------------
-// Kamera
-// --------------------------------------------------
-
-const camera = new ArcRotateCamera(
-  "camera",
-  -Math.PI / 2,
-  Math.PI / 3,
-  15000,
-  new Vector3(0, 0, 0),
-  scene
+camera.attachControl(
+  canvas,
+  true
 );
+
 
 camera.minZ = 0.1;
+
 camera.maxZ = 100000;
 
-camera.attachControl(canvas, true);
 
-camera.lowerRadiusLimit = 20;
-camera.upperRadiusLimit = 50000;
-
-camera.wheelPrecision = 4;
-camera.panningSensibility = 30;
+// Normale Geschwindigkeit
+camera.speed = 60;
 
 
-// --------------------------------------------------
-// Licht
-// --------------------------------------------------
+// Maus-Empfindlichkeit
+camera.angularSensibility = 3000;
 
-const light = new HemisphericLight(
-  "light",
-  new Vector3(0, 1, 0),
-  scene
+
+// WASD
+camera.keysUp = [87];
+
+camera.keysDown = [83];
+
+camera.keysLeft = [65];
+
+camera.keysRight = [68];
+
+
+// ============================================================
+// SHIFT = SCHNELLER FLIEGEN
+// ============================================================
+
+let shiftPressed = false;
+
+
+window.addEventListener(
+  "keydown",
+  event => {
+
+    if (
+      event.key === "Shift"
+    ) {
+
+      shiftPressed = true;
+
+      camera.speed = 250;
+    }
+
+  }
 );
 
-light.intensity = 0.9;
 
+window.addEventListener(
+  "keyup",
+  event => {
 
-// --------------------------------------------------
-// Boden
-// --------------------------------------------------
+    if (
+      event.key === "Shift"
+    ) {
 
-const ground = MeshBuilder.CreateGround(
-  "ground",
-  {
-    width: 30000,
-    height: 30000
-  },
-  scene
+      shiftPressed = false;
+
+      camera.speed = 60;
+    }
+
+  }
 );
 
-ground.position.y = -0.05;
+
+// ============================================================
+// LICHT
+// ============================================================
+
+const light =
+  new HemisphericLight(
+    "light",
+    new Vector3(
+      0,
+      1,
+      0
+    ),
+    scene
+  );
+
+
+light.intensity = 1.0;
+
+
+// ============================================================
+// BODEN
+// ============================================================
+//
+// Der Boden ist momentan nur eine Orientierungsebene.
+//
+// Er folgt NOCH NICHT dem DGM.
+// Das echte Terrain kommt später.
+//
+
+const ground =
+  MeshBuilder.CreateGround(
+    "ground",
+    {
+      width: 30000,
+      height: 25000
+    },
+    scene
+  );
+
+
+ground.position.y =
+  (
+    140
+    - WORLD_BASE_HEIGHT
+  )
+  * HEIGHT_SCALE;
+
 
 const groundMaterial =
   new StandardMaterial(
@@ -127,121 +348,271 @@ const groundMaterial =
     scene
   );
 
+
 groundMaterial.diffuseColor =
   new Color3(
-    0.08,
-    0.10,
-    0.08
+    0.16,
+    0.23,
+    0.12
   );
 
-ground.material = groundMaterial;
+
+groundMaterial.specularColor =
+  new Color3(
+    0,
+    0,
+    0
+  );
 
 
-// --------------------------------------------------
-// Track-Farben
-// --------------------------------------------------
+ground.material =
+  groundMaterial;
 
-function getTrackColor(type: TrackType): Color3 {
+
+// ============================================================
+// FARBEN
+// ============================================================
+
+function getTrackColor(
+  type: TrackType,
+  structure: StructureType
+): Color3 {
+
+  // Bauwerke bewusst hervorheben,
+  // damit wir Problemstellen visuell erkennen können.
+
+  if (
+    structure === "bridge"
+  ) {
+
+    return new Color3(
+      1,
+      0.75,
+      0.1
+    );
+
+  }
+
+
+  if (
+    structure === "tunnel"
+  ) {
+
+    return new Color3(
+      0.8,
+      0.2,
+      0.9
+    );
+
+  }
+
+
+  if (
+    structure === "covered"
+  ) {
+
+    return new Color3(
+      0.2,
+      0.9,
+      0.9
+    );
+
+  }
+
 
   switch (type) {
 
     case "tram":
+
       return new Color3(
-        0.8,
-        0.8,
-        0.8
+        0.95,
+        0.95,
+        0.95
       );
 
+
     case "light_rail":
+
       return new Color3(
-        0.55,
-        0.7,
+        0.3,
+        0.5,
         1
       );
 
+
     case "rail_600v":
+
       return new Color3(
         1,
-        0.65,
-        0.25
+        0.45,
+        0.1
       );
+
   }
+
 }
 
 
-// --------------------------------------------------
-// JSON laden
-// --------------------------------------------------
+// ============================================================
+// JSON LADEN
+// ============================================================
 
-async function loadTracks(): Promise<Track[]> {
+async function loadGraph():
+Promise<GraphData> {
 
   const response =
-    await fetch("/data/tracks.json");
+    await fetch(
+      "/data/graph_3d.json"
+    );
+
 
   if (!response.ok) {
+
     throw new Error(
-      `tracks.json konnte nicht geladen werden: ${response.status}`
+      "graph_3d.json konnte "
+      + "nicht geladen werden: "
+      + response.status
     );
+
   }
 
-  const data =
-    await response.json() as TracksData;
 
-  return data.tracks;
+  return (
+    await response.json()
+  ) as GraphData;
+
 }
 
 
-// --------------------------------------------------
-// Parallele Gleislinien berechnen
-// --------------------------------------------------
+// ============================================================
+// JSON-PUNKT -> BABYLON-PUNKT
+// ============================================================
 
-function createParallelTrackLines(
-  points: Vector3[],
+function toBabylonPoint(
+  point: GraphPoint
+): Vector3 {
+
+  return new Vector3(
+
+    point.x,
+
+    (
+      point.y
+      - WORLD_BASE_HEIGHT
+    )
+    * HEIGHT_SCALE,
+
+    point.z
+
+  );
+
+}
+
+
+// ============================================================
+// PARALLELE SCHIENEN BERECHNEN
+//
+// Wichtig:
+//
+// Die Schienen liegen jetzt in echtem 3D.
+//
+// Für die seitliche Verschiebung verwenden wir vorerst
+// nur X/Z.
+//
+// Das reicht für die Visualisierung.
+// Später bauen wir ein echtes 3D-Frenet-System für
+// geneigte Gleise.
+// ============================================================
+
+function createParallelRails(
+  centerPoints: Vector3[],
   gauge: number
 ) {
 
   const left: Vector3[] = [];
+
   const right: Vector3[] = [];
 
-  const halfGauge = gauge / 2;
+
+  const halfGauge =
+    gauge / 2;
 
 
   for (
     let i = 0;
-    i < points.length;
+    i < centerPoints.length;
     i++
   ) {
 
-    let direction: Vector3;
+    let direction:
+      Vector3;
 
 
-    if (i === 0) {
-
-      direction =
-        points[1]
-          .subtract(points[0]);
-
-    } else if (
-      i === points.length - 1
+    if (
+      i === 0
     ) {
 
       direction =
-        points[i]
-          .subtract(points[i - 1]);
+        centerPoints[1]
+          .subtract(
+            centerPoints[0]
+          );
 
-    } else {
+    }
 
-      const before =
-        points[i]
-          .subtract(points[i - 1]);
-
-      const after =
-        points[i + 1]
-          .subtract(points[i]);
+    else if (
+      i ===
+      centerPoints.length - 1
+    ) {
 
       direction =
-        before
-          .add(after);
+        centerPoints[i]
+          .subtract(
+            centerPoints[i - 1]
+          );
+
+    }
+
+    else {
+
+      const before =
+        centerPoints[i]
+          .subtract(
+            centerPoints[i - 1]
+          );
+
+
+      const after =
+        centerPoints[i + 1]
+          .subtract(
+            centerPoints[i]
+          );
+
+
+      direction =
+        before.add(
+          after
+        );
+
+    }
+
+
+    // Für Spurweite nur horizontale
+    // Richtung verwenden.
+    direction.y = 0;
+
+
+    if (
+      direction.lengthSquared()
+      < 0.000001
+    ) {
+
+      direction =
+        new Vector3(
+          1,
+          0,
+          0
+        );
 
     }
 
@@ -251,9 +622,13 @@ function createParallelTrackLines(
 
     const perpendicular =
       new Vector3(
+
         -direction.z,
+
         0,
+
         direction.x
+
       );
 
 
@@ -264,12 +639,20 @@ function createParallelTrackLines(
 
 
     left.push(
-      points[i].add(offset)
+      centerPoints[i]
+        .add(
+          offset
+        )
     );
 
+
     right.push(
-      points[i].subtract(offset)
+      centerPoints[i]
+        .subtract(
+          offset
+        )
     );
+
   }
 
 
@@ -277,65 +660,134 @@ function createParallelTrackLines(
     left,
     right
   };
+
 }
 
 
-// --------------------------------------------------
-// Gleisnetz erzeugen
-// --------------------------------------------------
+// ============================================================
+// TRACK-NETZ
+// ============================================================
 
 async function createTrackNetwork() {
 
   const status =
-    document.querySelector<HTMLSpanElement>("#status")!;
-
-  const tracks =
-    await loadTracks();
-
-  let pointCount = 0;
+    document.querySelector<HTMLSpanElement>(
+      "#status"
+    )!;
 
 
-  for (const track of tracks) {
+  const graph =
+    await loadGraph();
 
-    if (track.points.length < 2) {
+
+  let totalPoints = 0;
+
+  let bridges = 0;
+
+  let tunnels = 0;
+
+  let covered = 0;
+
+
+  for (
+    const edge of graph.edges
+  ) {
+
+    if (
+      edge.points.length < 2
+    ) {
+
       continue;
+
+    }
+
+
+    totalPoints +=
+      edge.points.length;
+
+
+    if (
+      edge.structure === "bridge"
+    ) {
+
+      bridges++;
+
+    }
+
+
+    if (
+      edge.structure === "tunnel"
+    ) {
+
+      tunnels++;
+
+    }
+
+
+    if (
+      edge.structure === "covered"
+    ) {
+
+      covered++;
+
     }
 
 
     const centerPoints =
-      track.points.map(
-        point =>
-          new Vector3(
-            point.x,
-            0.03,
-            point.z
-          )
+      edge.points.map(
+        toBabylonPoint
       );
 
 
-    pointCount +=
-      centerPoints.length;
+    let gauge =
+      DEFAULT_GAUGE;
 
 
-    const gauge =
-      track.properties.gauge
-        ? Number(track.properties.gauge) / 1000
-        : 1.435;
+    if (
+      edge.properties.gauge
+    ) {
+
+      const parsedGauge =
+        Number(
+          edge.properties.gauge
+        );
+
+
+      if (
+        Number.isFinite(
+          parsedGauge
+        )
+      ) {
+
+        gauge =
+          parsedGauge
+          / 1000;
+
+      }
+
+    }
 
 
     const {
       left,
       right
     } =
-      createParallelTrackLines(
+      createParallelRails(
         centerPoints,
         gauge
       );
 
 
+    const color =
+      getTrackColor(
+        edge.type,
+        edge.structure
+      );
+
+
     const leftRail =
       MeshBuilder.CreateLines(
-        `left-${track.id}`,
+        `left-${edge.id}`,
         {
           points: left
         },
@@ -345,7 +797,7 @@ async function createTrackNetwork() {
 
     const rightRail =
       MeshBuilder.CreateLines(
-        `right-${track.id}`,
+        `right-${edge.id}`,
         {
           points: right
         },
@@ -353,59 +805,81 @@ async function createTrackNetwork() {
       );
 
 
-    const color =
-      getTrackColor(
-        track.type
-      );
+    leftRail.color =
+      color;
 
 
-    leftRail.color = color;
-    rightRail.color = color;
+    rightRail.color =
+      color;
+
   }
 
 
   status.textContent =
-    `${tracks.length} Gleisabschnitte / ${pointCount} Punkte`;
+    `${graph.edges.length} Edges`
+    + ` · ${totalPoints} Punkte`
+    + ` · ${bridges} Brücken`
+    + ` · ${tunnels} Tunnel`
+    + ` · ${covered} überdeckt`;
+
+
+  console.log(
+    "3D-Gleisgraph geladen:",
+    graph
+  );
 
 }
 
 
-// --------------------------------------------------
-// Start
-// --------------------------------------------------
+// ============================================================
+// LADEN
+// ============================================================
 
 createTrackNetwork()
-  .catch(error => {
+  .catch(
+    error => {
 
-    console.error(error);
-
-    const status =
-      document.querySelector<HTMLSpanElement>("#status")!;
-
-    status.textContent =
-      "Fehler beim Laden der Gleisdaten";
-
-  });
+      console.error(
+        error
+      );
 
 
-// --------------------------------------------------
-// Render Loop
-// --------------------------------------------------
+      const status =
+        document.querySelector<HTMLSpanElement>(
+          "#status"
+        )!;
+
+
+      status.textContent =
+        "Fehler beim Laden "
+        + "von graph_3d.json";
+
+    }
+  );
+
+
+// ============================================================
+// RENDER LOOP
+// ============================================================
 
 engine.runRenderLoop(
   () => {
+
     scene.render();
+
   }
 );
 
 
-// --------------------------------------------------
-// Resize
-// --------------------------------------------------
+// ============================================================
+// RESIZE
+// ============================================================
 
 window.addEventListener(
   "resize",
   () => {
+
     engine.resize();
+
   }
 );
